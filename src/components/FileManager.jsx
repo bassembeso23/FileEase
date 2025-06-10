@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCloud } from '../contexts/CloudContext';
 import { customFetch } from '../services/api';
 import Pagination from './Pagination';
@@ -45,7 +45,75 @@ const FileManager = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
+  // Single effect to handle file fetching and cleanup
+  useEffect(() => {
+    const initializeFiles = async () => {
+      if (selectedCloud) {
+        setFiles([]); // Clear files when cloud provider changes
+        await fetchFiles(); // Fetch new files for the selected cloud
+      }
+    };
+
+    initializeFiles();
+
+    // Cleanup function to clear files when component unmounts
+    return () => {
+      setFiles([]);
+    };
+  }, [selectedCloud]); // Only depend on selectedCloud changes
+
+  const handleSearch = useCallback(async (query) => {
+    if (!query.trim()) {
+      setSearchQuery('');
+      setIsSearching(false);
+      try {
+        await fetchFiles();
+      } catch (error) {
+        setDeleteError(error.message || 'Failed to fetch files');
+      }
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      let endpoint;
+
+      const encodedQuery = encodeURIComponent(query.trim());
+
+      if (selectedCloud === 'Dropbox') {
+        endpoint = `/dropbox/fuzzy-search/?q=${encodedQuery}`;
+      } else {
+        endpoint = `/drive/fuzzy-search/?q=${encodedQuery}`;
+      }
+
+      const response = await customFetch({
+        endpoint,
+        requiresAuth: true
+      });
+
+      // Handle the specific response format with results array
+      if (response && Array.isArray(response.results)) {
+        setFiles(response.results);
+      } else {
+        setFiles([]);
+        console.error('Invalid response format from search API');
+      }
+
+      setSearchQuery(query);
+    } catch (error) {
+      setDeleteError(error.message || 'Failed to search files');
+      setFiles([]); // Reset files on error
+    } finally {
+      setIsSearching(false);
+    }
+  }, [selectedCloud, fetchFiles, setFiles]);
+
   const filteredFiles = useMemo(() => {
+    if (!Array.isArray(allFiles)) {
+      console.error('allFiles is not an array:', allFiles);
+      return [];
+    }
+
     return allFiles.filter(file => {
       const matchesFileType = fileTypeFilter === 'all' ||
         (fileTypeFilter === 'folder' && (file.mimeType === 'application/vnd.google-apps.folder' || file.mimeType === 'folder')) ||
@@ -82,34 +150,6 @@ const FileManager = () => {
     const endIndex = startIndex + itemsPerPage;
     return filteredFiles.slice(startIndex, endIndex);
   }, [filteredFiles, currentPage, itemsPerPage]);
-
-  const handleSearch = useCallback(async (query) => {
-    if (!query.trim()) {
-      setSearchQuery('');
-      setIsSearching(false);
-      await fetchFiles();
-      return;
-    }
-
-    try {
-      setIsSearching(true);
-      let endpoint = `/files/search/?q=${encodeURIComponent(query)}`;
-      if (selectedCloud === 'Dropbox') {
-        endpoint = `/dropbox/search/?q=${encodeURIComponent(query)}`;
-      }
-
-      const response = await customFetch({
-        endpoint,
-        requiresAuth: true
-      });
-      setFiles(response);
-      setSearchQuery(query);
-    } catch (error) {
-      setDeleteError(error.message || 'Failed to search files');
-    } finally {
-      setIsSearching(false);
-    }
-  }, [selectedCloud, fetchFiles, setFiles]);
 
   const handleFileUpload = useCallback(async (files) => {
     setUploading(true);
@@ -278,18 +318,32 @@ const FileManager = () => {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <span className="text-sm text-gray-500">Filter by:</span>
-        <div className="relative flex-1 md:flex-none">
+        <div className="relative flex-1 md:flex-none flex gap-2">
           <input
             type="text"
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
-              handleSearch(e.target.value);
+              const newValue = e.target.value;
+              setSearchQuery(newValue);
+              if (!newValue.trim()) {
+                fetchFiles();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch(searchQuery);
+              }
             }}
             className="w-full md:w-64 px-3 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#48A6A7]"
           />
-          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+          <button
+            onClick={() => handleSearch(searchQuery)}
+            className="px-4 py-1 bg-[#48A6A7] text-white rounded-md hover:bg-[#006A71] transition-colors flex items-center gap-2"
+          >
+            <Search size={16} />
+            Search
+          </button>
         </div>
 
         <select

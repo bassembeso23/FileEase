@@ -104,7 +104,7 @@ export default function HomePage() {
                         All Your Clouds. One Dashboard.
                     </h2>
                     <p className="text-lg mb-6 text-secondary">
-                        Access Google Drive, Dropbox, and Terabox from a single smart interface. Search everything instantly.
+                        Access Google Drive and Dropbox from a single smart interface. Search everything instantly.
                     </p>
                     <button
                         className="px-6 py-3 mb-6 text-white rounded-xl text-lg font-semibold transition hover:scale-105"
