@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCloud } from '../contexts/CloudContext';
 import { customFetch } from '../services/api';
 import Pagination from './Pagination';
+import { toast } from 'react-toastify';
 import {
   Grid,
   List,
@@ -16,7 +17,7 @@ import {
   Video,
   X,
   Eye,
-  Search
+  MessageSquare
 } from 'lucide-react';
 
 const FileManager = () => {
@@ -39,8 +40,6 @@ const FileManager = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [fileToDelete, setFileToDelete] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -61,52 +60,6 @@ const FileManager = () => {
       setFiles([]);
     };
   }, [selectedCloud]); // Only depend on selectedCloud changes
-
-  const handleSearch = useCallback(async (query) => {
-    if (!query.trim()) {
-      setSearchQuery('');
-      setIsSearching(false);
-      try {
-        await fetchFiles();
-      } catch (error) {
-        setDeleteError(error.message || 'Failed to fetch files');
-      }
-      return;
-    }
-
-    try {
-      setIsSearching(true);
-      let endpoint;
-
-      const encodedQuery = encodeURIComponent(query.trim());
-
-      if (selectedCloud === 'Dropbox') {
-        endpoint = `/dropbox/fuzzy-search/?q=${encodedQuery}`;
-      } else {
-        endpoint = `/drive/fuzzy-search/?q=${encodedQuery}`;
-      }
-
-      const response = await customFetch({
-        endpoint,
-        requiresAuth: true
-      });
-
-      // Handle the specific response format with results array
-      if (response && Array.isArray(response.results)) {
-        setFiles(response.results);
-      } else {
-        setFiles([]);
-        console.error('Invalid response format from search API');
-      }
-
-      setSearchQuery(query);
-    } catch (error) {
-      setDeleteError(error.message || 'Failed to search files');
-      setFiles([]); // Reset files on error
-    } finally {
-      setIsSearching(false);
-    }
-  }, [selectedCloud, fetchFiles, setFiles]);
 
   const filteredFiles = useMemo(() => {
     if (!Array.isArray(allFiles)) {
@@ -290,13 +243,95 @@ const FileManager = () => {
     setShowDeleteConfirm(true);
   };
 
+  const handleChatWithFile = async (file) => {
+    try {
+      // Convert the cloud source to the correct format
+      const source = selectedCloud === 'Google Drive' ? 'google' : 'dropbox';
+
+      // Log the file data for debugging
+      console.log('File data for chat:', {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        source: source
+      });
+
+      // Get the chatbot instance from the window object
+      const chatbot = window.chatbot;
+      if (chatbot) {
+        await chatbot.handleFileUpload(file, source);
+      } else {
+        console.error('Chatbot instance not found');
+        toast.error('Chatbot is not available');
+      }
+    } catch (error) {
+      console.error('Error in handleChatWithFile:', error);
+      toast.error('Failed to start chat with file');
+    }
+  };
+
+  const handleDownload = async (file) => {
+    try {
+      let endpoint = '/file/download-link/';
+      let body = {
+        public_link: true
+      };
+
+      if (selectedCloud === 'Dropbox') {
+        body.service_type = 'dropbox';
+        body.file_path = file.path_lower || `/${file.name}`;
+      } else {
+        body.service_type = 'google_drive';
+        body.file_id = file.id;
+      }
+
+      const response = await customFetch({
+        endpoint,
+        method: 'POST',
+        body,
+        requiresAuth: true
+      });
+
+      if (response && response.success && response.file.downloadLink) {
+        // Open the download link in a new tab
+        window.open(response.file.downloadLink, '_blank');
+        toast.success('File downloaded successfully');
+      } else {
+        throw new Error('Failed to download this file');
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error(error.message || 'Failed to download file');
+    }
+  };
+
+  const renderFileActions = (file) => {
+    const isPDF = file.mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    return (
+      <div className="flex items-center gap-2">
+        {isPDF && (
+          <button
+            onClick={() => handleChatWithFile(file)}
+            className="p-1 hover:bg-gray-100 rounded-full text-[#006A71] hover:text-[#48A6A7]"
+            title="Chat with this file"
+          >
+            <MessageSquare size={18} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   if (loading) return <div className="text-center p-4">Loading files...</div>;
   if (cloudError) return <div className="text-center p-4 text-red-500">{cloudError}</div>;
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-[#006A71]">My Files</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-[#006A71]">My Files</h2>
+        </div>
 
         <div className="flex items-center gap-2">
           <div className="flex border rounded-md overflow-hidden">
@@ -318,34 +353,6 @@ const FileManager = () => {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <span className="text-sm text-gray-500">Filter by:</span>
-        <div className="relative flex-1 md:flex-none flex gap-2">
-          <input
-            type="text"
-            placeholder="Search files..."
-            value={searchQuery}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setSearchQuery(newValue);
-              if (!newValue.trim()) {
-                fetchFiles();
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleSearch(searchQuery);
-              }
-            }}
-            className="w-full md:w-64 px-3 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#48A6A7]"
-          />
-          <button
-            onClick={() => handleSearch(searchQuery)}
-            className="px-4 py-1 bg-[#48A6A7] text-white rounded-md hover:bg-[#006A71] transition-colors flex items-center gap-2"
-          >
-            <Search size={16} />
-            Search
-          </button>
-        </div>
-
         <select
           className="border rounded-md px-3 py-1 text-sm"
           value={fileTypeFilter}
@@ -376,217 +383,202 @@ const FileManager = () => {
         </select>
       </div>
 
-      {isSearching ? (
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#48A6A7] mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-600">Searching files...</p>
+      {/* Upload */}
+      <div
+        className={`border-2 border-dashed rounded-lg p-6 text-center mb-6 transition-colors ${dragActive ? 'border-[#48A6A7] bg-[#F2EFE7]' : 'border-[#9ACBD0] hover:bg-[#F2EFE7]'}`}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+      >
+        <input
+          type="file"
+          multiple
+          onChange={handleFileInput}
+          className="hidden"
+          id="file-upload"
+        />
+        <label htmlFor="file-upload" className="cursor-pointer">
+          <Upload size={32} className="mx-auto text-[#48A6A7] mb-2" />
+          <p className="text-gray-600">
+            Drag and drop files here or{' '}
+            <span className="text-[#006A71] font-medium">browse files</span>
+          </p>
+        </label>
+
+        {uploading && (
+          <div className="mt-4">
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className="bg-[#48A6A7] h-2.5 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-gray-600 mt-2">Uploading... {uploadProgress}%</p>
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="mt-4 flex items-center justify-center gap-2 text-red-500">
+            <X size={16} />
+            <p className="text-sm">{uploadError}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && fileToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete "{fileToDelete.name}"? This action cannot be undone.
+            </p>
+            {deleteError && (
+              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setFileToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteFile(fileToDelete.id, fileToDelete.name)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
-      ) : (
+      )}
+
+      {viewMode === 'grid' ? (
         <>
-          {/* Upload */}
-          <div
-            className={`border-2 border-dashed rounded-lg p-6 text-center mb-6 transition-colors ${dragActive ? 'border-[#48A6A7] bg-[#F2EFE7]' : 'border-[#9ACBD0] hover:bg-[#F2EFE7]'}`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            <input
-              type="file"
-              multiple
-              onChange={handleFileInput}
-              className="hidden"
-              id="file-upload"
-            />
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <Upload size={32} className="mx-auto text-[#48A6A7] mb-2" />
-              <p className="text-gray-600">
-                Drag and drop files here or{' '}
-                <span className="text-[#006A71] font-medium">browse files</span>
-              </p>
-            </label>
-
-            {uploading && (
-              <div className="mt-4">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className="bg-[#48A6A7] h-2.5 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {currentPageFiles.map(file => (
+              <div key={file.id} className="card hover:border-[#9ACBD0] border border-transparent p-4 rounded-lg">
+                <div className="flex justify-between items-start mb-3">
+                  {getFileIcon(file.mimeType)}
+                  <div className="dropdown relative">
+                    <button
+                      className="p-1 rounded-full hover:bg-gray-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const dropdown = e.currentTarget.nextElementSibling;
+                        dropdown.classList.toggle('hidden');
+                      }}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                      {renderFileActions(file)}
+                    </div>
+                  </div>
                 </div>
-                <p className="text-sm text-gray-600 mt-2">Uploading... {uploadProgress}%</p>
-              </div>
-            )}
 
-            {uploadError && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-red-500">
-                <X size={16} />
-                <p className="text-sm">{uploadError}</p>
+                <h3 className="font-medium text-gray-800 mb-1 truncate" title={file.name}>{file.name}</h3>
+                <div className="text-xs text-gray-500 mb-2">
+                  {file.size ? formatFileSize(file.size) : 'Folder'} • {formatDate(file.modifiedTime)}
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className={`text-xs px-2 py-1 rounded-full ${selectedCloud === 'Dropbox' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
+                    {selectedCloud}
+                  </span>
+
+                  <div className="flex gap-1">
+                    <a
+                      href={file.webViewLink || file.preview_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 rounded-full hover:bg-gray-100"
+                      title="Preview"
+                    >
+                      <Eye size={14} />
+                    </a>
+                    <button
+                      onClick={() => handleDownload(file)}
+                      className="p-1 rounded-full hover:bg-gray-100"
+                      title="Download"
+                    >
+                      <Download size={14} />
+                    </button>
+                    <button
+                      onClick={() => confirmDelete(file)}
+                      className="p-1 rounded-full hover:bg-gray-100 text-red-500 hover:text-red-600"
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
-            )}
+            ))}
           </div>
 
-          {/* Delete Confirmation Modal */}
-          {showDeleteConfirm && fileToDelete && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
-                <p className="text-gray-600 mb-6">
-                  Are you sure you want to delete "{fileToDelete.name}"? This action cannot be undone.
-                </p>
-                {deleteError && (
-                  <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
-                    {deleteError}
-                  </div>
-                )}
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => {
-                      setShowDeleteConfirm(false);
-                      setFileToDelete(null);
-                      setDeleteError(null);
-                    }}
-                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handleDeleteFile(fileToDelete.id, fileToDelete.name)}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
+          {filteredFiles.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredFiles.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={handlePageChange}
+            />
           )}
-
-          {viewMode === 'grid' ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        </>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 text-left">
+                <tr>
+                  <th className="p-3 text-gray-600 text-sm font-medium">Name</th>
+                  <th className="p-3 text-gray-600 text-sm font-medium">Type</th>
+                  <th className="p-3 text-gray-600 text-sm font-medium">Size</th>
+                  <th className="p-3 text-gray-600 text-sm font-medium">Modified</th>
+                  <th className="p-3 text-gray-600 text-sm font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
                 {currentPageFiles.map(file => (
-                  <div key={file.id} className="card hover:border-[#9ACBD0] border border-transparent p-4 rounded-lg">
-                    <div className="flex justify-between items-start mb-3">
-                      {getFileIcon(file.mimeType)}
-                      <div className="dropdown relative">
-                        <button
-                          className="p-1 rounded-full hover:bg-gray-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const dropdown = e.currentTarget.nextElementSibling;
-                            dropdown.classList.toggle('hidden');
-                          }}
-                        >
-                          <MoreHorizontal size={16} />
-                        </button>
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
-                          <button
-                            onClick={() => confirmDelete(file)}
-                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
-                          >
-                            <Trash2 size={16} />
-                            Delete
-                          </button>
-                        </div>
+                  <tr key={file.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        {getFileIcon(file.mimeType)}
+                        <span>{file.name}</span>
                       </div>
-                    </div>
-
-                    <h3 className="font-medium text-gray-800 mb-1 truncate" title={file.name}>{file.name}</h3>
-                    <div className="text-xs text-gray-500 mb-2">
-                      {file.size ? formatFileSize(file.size) : 'Folder'} • {formatDate(file.modifiedTime)}
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className={`text-xs px-2 py-1 rounded-full ${selectedCloud === 'Dropbox' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {selectedCloud}
-                      </span>
-
-                      <div className="flex gap-1">
-                        <a
-                          href={file.webViewLink || file.preview_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1 rounded-full hover:bg-gray-100"
-                        >
-                          <Eye size={14} />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
+                    </td>
+                    <td className="p-3 text-gray-500">
+                      {file.mimeType === 'application/vnd.google-apps.folder' || file.mimeType === 'folder' ? 'Folder' :
+                        file.mimeType === 'file' ? file.name.split('.').pop().toUpperCase() :
+                          file.mimeType.split('/')[1]}
+                    </td>
+                    <td className="p-3 text-gray-500">{file.size ? formatFileSize(file.size) : '-'}</td>
+                    <td className="p-3 text-gray-500">{formatDate(file.modifiedTime)}</td>
+                    <td className="p-3">
+                      {renderFileActions(file)}
+                    </td>
+                  </tr>
                 ))}
-              </div>
+              </tbody>
+            </table>
+          </div>
 
-              {filteredFiles.length > 0 && (
-                <Pagination
-                  currentPage={currentPage}
-                  totalItems={filteredFiles.length}
-                  itemsPerPage={itemsPerPage}
-                  onPageChange={handlePageChange}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 text-left">
-                    <tr>
-                      <th className="p-3 text-gray-600 text-sm font-medium">Name</th>
-                      <th className="p-3 text-gray-600 text-sm font-medium">Type</th>
-                      <th className="p-3 text-gray-600 text-sm font-medium">Size</th>
-                      <th className="p-3 text-gray-600 text-sm font-medium">Modified</th>
-                      <th className="p-3 text-gray-600 text-sm font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentPageFiles.map(file => (
-                      <tr key={file.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            {getFileIcon(file.mimeType)}
-                            <span>{file.name}</span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-gray-500">
-                          {file.mimeType === 'application/vnd.google-apps.folder' || file.mimeType === 'folder' ? 'Folder' :
-                            file.mimeType === 'file' ? file.name.split('.').pop().toUpperCase() :
-                              file.mimeType.split('/')[1]}
-                        </td>
-                        <td className="p-3 text-gray-500">{file.size ? formatFileSize(file.size) : '-'}</td>
-                        <td className="p-3 text-gray-500">{formatDate(file.modifiedTime)}</td>
-                        <td className="p-3">
-                          <div className="flex gap-2">
-                            <a
-                              href={file.webViewLink || file.preview_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1 rounded-full hover:bg-gray-100"
-                            >
-                              <Eye size={14} />
-                            </a>
-                            <button
-                              onClick={() => confirmDelete(file)}
-                              className="p-1 rounded-full hover:bg-gray-100 text-red-600"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {filteredFiles.length > 0 && (
-                <Pagination
-                  currentPage={currentPage}
-                  totalItems={filteredFiles.length}
-                  itemsPerPage={itemsPerPage}
-                  onPageChange={handlePageChange}
-                />
-              )}
-            </>
+          {filteredFiles.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredFiles.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={handlePageChange}
+            />
           )}
         </>
       )}

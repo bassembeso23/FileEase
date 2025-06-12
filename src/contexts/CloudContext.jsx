@@ -24,6 +24,14 @@ export const CloudProvider = ({ children }) => {
     const navigate = useNavigate();
     const { toast } = useToast();
 
+    // Clear all cloud-related state
+    const clearCloudState = () => {
+        setFiles([]);
+        setStats(initialStats);
+        setIsConnected(false);
+        setError(null);
+    };
+
     const fetchFiles = async () => {
         if (!selectedCloud) {
             navigate('/select-cloud');
@@ -32,19 +40,25 @@ export const CloudProvider = ({ children }) => {
 
         try {
             setLoading(true);
-            setError(null);
-            // Reset stats while loading
-            setStats(initialStats);
+            clearCloudState(); // Clear state before fetching new files
 
-            let endpoint = '/files/';
+            let endpoint;
             if (selectedCloud === 'Dropbox') {
                 endpoint = '/dropbox/files/';
+            } else if (selectedCloud === 'Google Drive') {
+                endpoint = '/files/';
+            } else {
+                throw new Error('Invalid cloud provider selected');
             }
 
             const response = await customFetch({
                 endpoint,
                 requiresAuth: true
             });
+
+            if (!response || !Array.isArray(response)) {
+                throw new Error('Invalid response format from server');
+            }
 
             setFiles(response);
             calculateStats(response);
@@ -57,9 +71,7 @@ export const CloudProvider = ({ children }) => {
         } catch (error) {
             const errorMessage = error.message || 'Failed to fetch files';
             setError(errorMessage);
-            setIsConnected(false);
-            // Reset stats on error
-            setStats(initialStats);
+            clearCloudState(); // Clear state on error
 
             toast({
                 title: "Error",
@@ -110,9 +122,7 @@ export const CloudProvider = ({ children }) => {
     const disconnectCloud = () => {
         localStorage.removeItem('selectedCloud');
         setSelectedCloud(null);
-        setIsConnected(false);
-        setFiles([]);
-        setStats(initialStats);
+        clearCloudState();
         navigate('/select-cloud');
 
         toast({
@@ -121,12 +131,22 @@ export const CloudProvider = ({ children }) => {
         });
     };
 
+    // Handle cloud provider changes
+    const handleCloudChange = (newCloud) => {
+        if (newCloud !== selectedCloud) {
+            clearCloudState(); // Clear state before changing cloud
+            setSelectedCloud(newCloud);
+            localStorage.setItem('selectedCloud', newCloud);
+        }
+    };
+
+    // Fetch files when selectedCloud changes
     useEffect(() => {
         if (selectedCloud) {
             fetchFiles();
         } else {
             setLoading(false);
-            setStats(initialStats);
+            clearCloudState();
             if (window.location.pathname !== '/select-cloud') {
                 navigate('/select-cloud');
             }
@@ -135,7 +155,7 @@ export const CloudProvider = ({ children }) => {
 
     const value = {
         selectedCloud,
-        setSelectedCloud,
+        setSelectedCloud: handleCloudChange, // Use the new handler instead of direct setState
         isConnected,
         setIsConnected,
         files,

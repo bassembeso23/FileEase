@@ -4,7 +4,7 @@ import Sidebar from '../components/Sidebar';
 import DashboardStats from '../components/DashboardStats';
 import FileManager from '../components/FileManager';
 import CloudAccounts from '../components/CloudAccounts';
-import RecentActivity from '../components/RecentActivity';
+import Chatbot from '../components/Chatbot';
 
 export default function Dashboard() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -37,22 +37,21 @@ export default function Dashboard() {
 
             <main className={`transition-all duration-300 pt-16 ${sidebarOpen ? 'md:ml-64' : 'ml-0 md:ml-16'}`}>
                 <div className="p-4 md:p-6">
-                    <h1 className="text-2xl font-bold text-[#006A71] mb-6">Dashboard</h1>
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="text-2xl font-bold text-[#006A71]">Dashboard</h1>
+                    </div>
 
                     <DashboardStats />
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                        <div className="lg:col-span-2">
-                            <FileManager />
-                        </div>
-                        <div className="lg:col-span-1">
-                            <RecentActivity />
-                        </div>
+                    <div className="mb-6">
+                        <FileManager />
                     </div>
 
                     <CloudAccounts />
                 </div>
             </main>
+
+            <Chatbot />
         </div>
     );
-};
+}
