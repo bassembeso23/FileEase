@@ -60,26 +60,71 @@ export const CloudProvider = ({ children }) => {
                 throw new Error('Invalid response format from server');
             }
 
+            // Set files and stats immediately
             setFiles(response);
             calculateStats(response);
             setIsConnected(true);
 
-            toast({
-                title: "Success",
-                description: `Successfully fetched files from ${selectedCloud}`,
-            });
-        } catch (error) {
-            const errorMessage = error.message || 'Failed to fetch files';
-            setError(errorMessage);
-            clearCloudState(); // Clear state on error
+            // Process download links and upload documents in the background
+            processFilesInBackground(response);
 
+        } catch (error) {
+            setError(error.message || 'Failed to fetch files');
             toast({
                 title: "Error",
-                description: errorMessage,
+                description: error.message || 'Failed to fetch files',
                 variant: "destructive"
             });
         } finally {
             setLoading(false);
+        }
+    };
+
+    // New function to handle background processing
+    const processFilesInBackground = async (files) => {
+        try {
+            const batchDownloadData = {
+                google_drive_ids: selectedCloud === 'Google Drive' ? files.map(file => file.id) : [],
+                dropbox_paths: selectedCloud === 'Dropbox' ? files.map(file => file.path_lower) : [],
+                public_link: true
+            };
+
+            const batchResponse = await customFetch({
+                endpoint: '/batch-download-links/',
+                method: 'POST',
+                body: batchDownloadData,
+                requiresAuth: true
+            });
+
+            console.log('Batch Download Links Response:', batchResponse);
+
+            // Extract download links from both Google Drive and Dropbox files
+            const downloadLinks = [
+                ...(batchResponse.results.google_drive_files || []).map(file => file.downloadLink),
+                ...(batchResponse.results.dropbox_files || []).map(file => file.downloadLink)
+            ].filter(link => link !== null && link !== undefined);
+
+            console.log('Extracted Download Links:', downloadLinks);
+
+            // Upload the links to the specified endpoint
+            if (downloadLinks.length > 0) {
+                try {
+                    const uploadLinksResponse = await customFetch({
+                        endpoint: '/upload-links/',
+                        method: 'POST',
+                        body: {
+                            links: downloadLinks
+                        },
+                        requiresAuth: true
+                    });
+
+                    console.log('Upload Links Response:', uploadLinksResponse);
+                } catch (uploadError) {
+                    console.error('Failed to upload links:', uploadError);
+                }
+            }
+        } catch (batchError) {
+            console.error('Failed to process files in background:', batchError);
         }
     };
 
@@ -140,10 +185,18 @@ export const CloudProvider = ({ children }) => {
         }
     };
 
-    // Fetch files when selectedCloud changes
+    // Single effect to handle both initial load and cloud provider changes
     useEffect(() => {
-        if (selectedCloud) {
-            fetchFiles();
+        const storedCloud = localStorage.getItem('selectedCloud');
+
+        if (storedCloud) {
+            if (!selectedCloud) {
+                // Only set selectedCloud if it's not already set
+                setSelectedCloud(storedCloud);
+            } else {
+                // If selectedCloud is already set, fetch files
+                fetchFiles();
+            }
         } else {
             setLoading(false);
             clearCloudState();
@@ -151,11 +204,11 @@ export const CloudProvider = ({ children }) => {
                 navigate('/select-cloud');
             }
         }
-    }, [selectedCloud]);
+    }, [selectedCloud]); // Only depend on selectedCloud
 
     const value = {
         selectedCloud,
-        setSelectedCloud: handleCloudChange, // Use the new handler instead of direct setState
+        setSelectedCloud: handleCloudChange,
         isConnected,
         setIsConnected,
         files,

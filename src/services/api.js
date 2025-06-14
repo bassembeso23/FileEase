@@ -1,6 +1,23 @@
 import { getAccessToken } from "../actions/tokenManager";
 import { UNAUTHORIZED } from "../constants/statusCodes";
 
+// Function to get CSRF token from cookie
+function getCSRFToken() {
+  const name = "csrftoken";
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== "") {
+    const cookies = document.cookie.split(";");
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === name + "=") {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
 /**
  * Fetch data from an API endpoint with optional configuration.
  *
@@ -49,9 +66,18 @@ export async function customFetch({
     ...headers,
   };
 
+  // Add CSRF token for non-GET requests
+  if (method !== "GET") {
+    const csrfToken = getCSRFToken();
+    if (csrfToken) {
+      requestHeaders["X-CSRFToken"] = csrfToken;
+    }
+  }
+
   const fetchOptions = {
     method,
     headers: requestHeaders,
+    credentials: "include", // Include cookies in the request
     ...options,
   };
 

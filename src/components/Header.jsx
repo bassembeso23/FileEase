@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Menu, Search, Bell, SlidersHorizontal, LogOut, User, ChevronDown, X, Settings, RotateCcw, Loader2 } from 'lucide-react';
 import { useLogout } from '../hooks/useLogout';
 import { useCloud } from '../contexts/CloudContext';
@@ -13,37 +13,16 @@ const Header = ({ toggleSidebar }) => {
   const [isSynonymSearch, setIsSynonymSearch] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [originalFiles, setOriginalFiles] = useState([]);
   const { loading, logout } = useLogout();
-  const { selectedCloud, setFiles, files } = useCloud();
+  const { selectedCloud, files, setFiles } = useCloud();
+  const [originalFiles, setOriginalFiles] = useState([]);
 
-  // Fetch original files when component mounts or cloud service changes
-  useEffect(() => {
-    const fetchOriginalFiles = async () => {
-      try {
-        let endpoint;
-        if (selectedCloud === 'Dropbox') {
-          endpoint = '/dropbox/files';
-        } else {
-          endpoint = '/files';
-        }
-
-        const response = await customFetch({
-          endpoint,
-          requiresAuth: true
-        });
-
-        if (response && Array.isArray(response)) {
-          setOriginalFiles(response);
-          setFiles(response);
-        }
-      } catch (error) {
-        console.error('Failed to fetch original files:', error);
-      }
-    };
-
-    fetchOriginalFiles();
-  }, [selectedCloud, setFiles]);
+  // Update originalFiles when files change
+  React.useEffect(() => {
+    if (files && files.length > 0 && originalFiles.length === 0) {
+      setOriginalFiles(files);
+    }
+  }, [files]);
 
   const handleLogout = async () => {
     await logout();
@@ -69,8 +48,13 @@ const Header = ({ toggleSidebar }) => {
 
     setIsSearching(true);
     try {
+      // Determine the endpoint based on the selected cloud service
+      const endpoint = selectedCloud === 'Dropbox'
+        ? `/dropbox/search/?q=${encodeURIComponent(query)}`
+        : `/files/search/?q=${encodeURIComponent(query)}`;
+
       const response = await customFetch({
-        endpoint: `/files/search/?q=${encodeURIComponent(query)}`,
+        endpoint,
         method: 'GET',
         requiresAuth: true
       });
@@ -119,6 +103,7 @@ const Header = ({ toggleSidebar }) => {
       setFiles([]); // Clear files on error
     } finally {
       setIsSearching(false);
+      setShowSearchModal(false); // Close the modal after search is done
     }
   };
 
@@ -153,6 +138,7 @@ const Header = ({ toggleSidebar }) => {
       setFiles([]); // Clear files on error
     } finally {
       setIsSynonymSearch(false);
+      setShowSearchModal(false); // Close the modal after search is done
     }
   };
 
@@ -224,7 +210,7 @@ const Header = ({ toggleSidebar }) => {
               disabled={loading}
             >
               <div className="w-8 h-8 bg-[#48A6A7] rounded-full flex items-center justify-center">
-                <span className="font-semibold text-sm">JD</span>
+                <span className="font-semibold text-sm">BY</span>
               </div>
               <ChevronDown size={16} />
             </button>
@@ -234,10 +220,6 @@ const Header = ({ toggleSidebar }) => {
                 <a href="#" className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
                   <User size={16} />
                   <span>Profile</span>
-                </a>
-                <a href="#" className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
-                  <Settings size={16} />
-                  <span>Settings</span>
                 </a>
                 <hr className="my-1" />
                 <button
@@ -270,7 +252,7 @@ const Header = ({ toggleSidebar }) => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Fuzzy Search
+                    Loose Matching
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -296,14 +278,14 @@ const Header = ({ toggleSidebar }) => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Synonym Search
+                    Meaning Search
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={synonymQuery}
                     onChange={(e) => setSynonymQuery(e.target.value)}
-                    placeholder="Enter search terms..."
+                    placeholder="Type a keyword or text that appears in the file name...."
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#48A6A7] focus:border-transparent text-gray-900"
                     disabled={isSearching || isSynonymSearch}
                   />

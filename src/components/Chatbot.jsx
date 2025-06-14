@@ -10,6 +10,7 @@ const Chatbot = () => {
     const [currentFile, setCurrentFile] = useState(null);
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFileUploading, setIsFileUploading] = useState(false);
 
     useEffect(() => {
         // Expose the chatbot methods globally
@@ -49,23 +50,22 @@ const Chatbot = () => {
 
     const handleFileUpload = async (file, source) => {
         try {
+            setIsFileUploading(true);
+            setIsOpen(true); // Open chat window immediately
+
             // Create new session first
             const newSessionId = await createNewSession();
 
-            // Log the file and source for debugging
-            console.log('Processing file:', {
-                file_id: file.id,
-                file_name: file.name,
-                source: source.toLowerCase(),
-                session_id: newSessionId
-            });
-
+            // Prepare file details based on source
             const fileDetails = {
-                file_id: file.id,
+                file_id: source.toLowerCase() === 'google' ? file.id : (file.id || `/${file.name}`),
                 file_name: file.name,
                 source: source.toLowerCase(),
                 session_id: newSessionId
             };
+
+            // Log the file and source for debugging
+            console.log('Processing file:', fileDetails);
 
             const response = await customFetch({
                 endpoint: '/chatbot/upload-document/',
@@ -78,7 +78,6 @@ const Chatbot = () => {
 
             if (response.success) {
                 setCurrentFile(file);
-                setIsOpen(true); // Open the chat window when a file is uploaded
                 setMessages([]); // Clear messages for new file
                 toast.success(`File "${file.name}" processed successfully!`);
             } else {
@@ -92,6 +91,8 @@ const Chatbot = () => {
                 source: source
             });
             toast.error(error.message || 'Failed to process file');
+        } finally {
+            setIsFileUploading(false);
         }
     };
 
@@ -179,44 +180,56 @@ const Chatbot = () => {
                             </div>
                         )}
 
+                        {/* File Upload Loading State */}
+                        {isFileUploading && (
+                            <div className="flex justify-center items-center h-full">
+                                <div className="flex flex-col items-center gap-2">
+                                    <FaSpinner className="animate-spin text-[#006A71] w-8 h-8" />
+                                    <span className="text-[#006A71]">Uploading file...</span>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Chat Messages Area */}
-                        <div className="flex-grow overflow-y-auto mb-4 space-y-4">
-                            {messages.map((msg, index) => (
-                                <div
-                                    key={index}
-                                    className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                                >
+                        {!isFileUploading && (
+                            <div className="flex-grow overflow-y-auto mb-4 space-y-4">
+                                {messages.map((msg, index) => (
                                     <div
-                                        className={`max-w-[80%] rounded-lg p-3 ${msg.type === 'user'
-                                            ? 'bg-[#006A71] text-white'
-                                            : msg.type === 'error'
-                                                ? 'bg-red-100 text-red-700'
-                                                : 'bg-gray-100 text-gray-800'
-                                            }`}
+                                        key={index}
+                                        className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
                                     >
-                                        <div className="flex items-center gap-2 mb-1">
-                                            {msg.type === 'user' ? (
-                                                <FaUser className="text-sm" />
-                                            ) : (
-                                                <FaRobot className="text-sm" />
-                                            )}
-                                            <span className="text-xs opacity-75">
-                                                {msg.type === 'user' ? 'You' : 'Assistant'}
-                                            </span>
+                                        <div
+                                            className={`max-w-[80%] rounded-lg p-3 ${msg.type === 'user'
+                                                ? 'bg-[#006A71] text-white'
+                                                : msg.type === 'error'
+                                                    ? 'bg-red-100 text-red-700'
+                                                    : 'bg-gray-100 text-gray-800'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-1">
+                                                {msg.type === 'user' ? (
+                                                    <FaUser className="text-sm" />
+                                                ) : (
+                                                    <FaRobot className="text-sm" />
+                                                )}
+                                                <span className="text-xs opacity-75">
+                                                    {msg.type === 'user' ? 'You' : 'Assistant'}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                                         </div>
-                                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                                     </div>
-                                </div>
-                            ))}
-                            {isLoading && (
-                                <div className="flex justify-start">
-                                    <div className="bg-gray-100 rounded-lg p-3 flex items-center gap-2">
-                                        <FaSpinner className="animate-spin text-[#006A71]" />
-                                        <span className="text-sm text-gray-600">Thinking...</span>
+                                ))}
+                                {isLoading && (
+                                    <div className="flex justify-start">
+                                        <div className="bg-gray-100 rounded-lg p-3 flex items-center gap-2">
+                                            <FaSpinner className="animate-spin text-[#006A71]" />
+                                            <span className="text-sm text-gray-600">Generating...</span>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Input Area */}
                         <form onSubmit={handleSubmit} className="flex gap-2">

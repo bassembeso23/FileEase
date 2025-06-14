@@ -7,6 +7,32 @@ import { deleteTokens } from "./tokenManager";
  */
 export async function logout() {
   try {
+    // Get the selected cloud provider before clearing it
+    const selectedCloud = localStorage.getItem("selectedCloud");
+
+    // Call the delete-processed-folders API first
+    await customFetch({
+      endpoint: "/delete-processed-folders/",
+      method: "DELETE",
+      requiresAuth: true,
+    });
+
+    // Call the appropriate revoke API based on the cloud provider
+    if (selectedCloud === "Google Drive") {
+      await customFetch({
+        endpoint: "/auth/google/revoke/",
+        method: "POST",
+        requiresAuth: true,
+      });
+    } else if (selectedCloud === "Dropbox") {
+      await customFetch({
+        endpoint: "/auth/dropbox/revoke/",
+        method: "POST",
+        requiresAuth: true,
+      });
+    }
+
+    // Call the main logout API
     const response = await customFetch({
       endpoint: "/auth/logout/",
       method: "GET",

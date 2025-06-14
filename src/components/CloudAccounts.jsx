@@ -25,7 +25,7 @@ const CloudAccounts = () => {
   ];
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+    <div id="cloud-accounts" className="bg-white rounded-lg shadow-md p-4 mb-6">
       <h2 className="text-lg font-semibold text-[#006A71] mb-4">Connected Cloud Accounts</h2>
 
       <div className="grid gap-4 md:grid-cols-2">

@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingPage from './components/LoadingPage';
 import CloudSelect from './pages/CloudSelect';
+import SemanticSearchPage from './pages/SemanticSearchPage';
 import { ToastContainer } from 'react-toastify';
 import { getAccessToken } from './actions/tokenManager';
 import { CloudProvider } from './contexts/CloudContext';
@@ -59,7 +60,7 @@ const AuthCheck = ({ children }) => {
   }
 
   if (isAuthenticated && hasCloudProvider) {
-    if (location.pathname === '/dashboard' || location.pathname === '/auth') {
+    if (location.pathname === '/dashboard' || location.pathname === '/semantic-search' || location.pathname === '/auth') {
       return children;
     }
     return <Navigate to="/dashboard" replace />;
@@ -99,6 +100,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <CloudSelect />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/semantic-search"
+              element={
+                <ProtectedRoute>
+                  <SemanticSearchPage />
                 </ProtectedRoute>
               }
             />

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useCloud } from '../contexts/CloudContext';
 import { customFetch } from '../services/api';
 import Pagination from './Pagination';
@@ -26,8 +26,7 @@ const FileManager = () => {
     loading,
     error: cloudError,
     fetchFiles,
-    selectedCloud,
-    setFiles
+    selectedCloud
   } = useCloud();
 
   const [viewMode, setViewMode] = useState('grid');
@@ -43,23 +42,6 @@ const FileManager = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
-
-  // Single effect to handle file fetching and cleanup
-  useEffect(() => {
-    const initializeFiles = async () => {
-      if (selectedCloud) {
-        setFiles([]); // Clear files when cloud provider changes
-        await fetchFiles(); // Fetch new files for the selected cloud
-      }
-    };
-
-    initializeFiles();
-
-    // Cleanup function to clear files when component unmounts
-    return () => {
-      setFiles([]);
-    };
-  }, [selectedCloud]); // Only depend on selectedCloud changes
 
   const filteredFiles = useMemo(() => {
     if (!Array.isArray(allFiles)) {
@@ -248,18 +230,28 @@ const FileManager = () => {
       // Convert the cloud source to the correct format
       const source = selectedCloud === 'Google Drive' ? 'google' : 'dropbox';
 
-      // Log the file data for debugging
-      console.log('File data for chat:', {
-        id: file.id,
+      // Prepare file data based on source
+      const fileData = {
+        id: source === 'dropbox' ? file.path_lower || `/${file.name}` : file.id,
         name: file.name,
         mimeType: file.mimeType,
         source: source
-      });
+      };
+
+      // Log the file data for debugging
+      console.log('File data for chat:', fileData);
 
       // Get the chatbot instance from the window object
       const chatbot = window.chatbot;
       if (chatbot) {
-        await chatbot.handleFileUpload(file, source);
+        // Create a new file object with the correct structure
+        const formattedFile = {
+          id: fileData.id,  // This will be the path for Dropbox or ID for Google Drive
+          name: fileData.name,
+          source: fileData.source
+        };
+        console.log('Formatted file for chatbot:', formattedFile); // Debug log
+        await chatbot.handleFileUpload(formattedFile, source);
       } else {
         console.error('Chatbot instance not found');
         toast.error('Chatbot is not available');
@@ -284,6 +276,8 @@ const FileManager = () => {
         body.service_type = 'google_drive';
         body.file_id = file.id;
       }
+
+      console.log('Download request body:', body); // Debug log
 
       const response = await customFetch({
         endpoint,
@@ -327,7 +321,7 @@ const FileManager = () => {
   if (cloudError) return <div className="text-center p-4 text-red-500">{cloudError}</div>;
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4">
+    <div id="my-files" className="bg-white rounded-lg shadow-md p-4">
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-semibold text-[#006A71]">My Files</h2>
